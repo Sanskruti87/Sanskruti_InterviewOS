@@ -127,14 +127,8 @@ export default function LandingPage() {
             transition={{ duration: 0.5 }}
             className="mx-auto max-w-3xl text-center"
           >
-            <Badge variant="secondary" className="mb-4 gap-1">
-              <Sparkles className="h-3 w-3" />
-              ABTalks Vibe Coding Hackathon
-            </Badge>
             <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
               The AI Interview Agent
-              <br />
-              <span className="text-gradient">that thinks like a senior engineer</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
               Not a chatbot. Not a quiz. An adaptive AI interviewer that conducts
