@@ -153,16 +153,69 @@ function generateFollowUp(
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-function evaluateAnswer(answer: string, difficulty: Difficulty): 'shallow' | 'strong' | 'weak' | 'good' {
-  const trimmed = answer.trim();
-  const words = trimmed.split(/\s+/).length;
-  const hasKeywords = /because|therefore|however|specifically|approach|architecture|implement|design|optimize|trade-?off|challenge|scale|production/i.test(trimmed);
-  const hasVague = /stuff|things|something|whatever|kind of|sort of|i think maybe|not sure|don't know/i.test(trimmed);
+// function evaluateAnswer(answer: string, difficulty: Difficulty): 'shallow' | 'strong' | 'weak' | 'good' {
+//   const trimmed = answer.trim();
+//   const words = trimmed.split(/\s+/).length;
+//   const hasKeywords = /because|therefore|however|specifically|approach|architecture|implement|design|optimize|trade-?off|challenge|scale|production/i.test(trimmed);
+//   const hasVague = /stuff|things|something|whatever|kind of|sort of|i think maybe|not sure|don't know/i.test(trimmed);
 
-  if (words < 8 || hasVague) return 'weak';
-  if (words < 25 && !hasKeywords) return 'shallow';
-  if (words >= 40 && hasKeywords) return 'strong';
-  return 'good';
+//   if (words < 8 || hasVague) return 'weak';
+//   if (words < 25 && !hasKeywords) return 'shallow';
+//   if (words >= 40 && hasKeywords) return 'strong';
+//   return 'good';
+// }
+
+function evaluateAnswer(
+  answer: string,
+  difficulty: Difficulty
+): {
+  quality: "weak" | "shallow" | "good" | "strong";
+  confidence: number;
+  reasoning: number;
+  communication: number;
+} {
+  const text = answer.trim();
+
+  const words = text.split(/\s+/).length;
+
+  const technicalTerms =
+    text.match(
+      /\b(rag|embedding|vector|retrieval|llm|prompt|mcp|agent|api|pipeline|database|latency|cache|token|index|chunk|deployment|docker|kubernetes)\b/gi
+    ) || [];
+
+  const reasoningWords =
+    text.match(
+      /\b(because|therefore|however|trade-off|approach|architecture|design|optimize|implementation|challenge)\b/gi
+    ) || [];
+
+  let quality: "weak" | "shallow" | "good" | "strong" = "good";
+
+  if (words < 8) quality = "weak";
+  else if (words < 20) quality = "shallow";
+  else if (technicalTerms.length >= 5 && reasoningWords.length >= 2)
+    quality = "strong";
+
+  const confidence = Math.min(
+    100,
+    Math.round(words * 1.5 + technicalTerms.length * 8)
+  );
+
+  const reasoning = Math.min(
+    100,
+    reasoningWords.length * 18 + (quality === "strong" ? 20 : 0)
+  );
+
+  const communication = Math.min(
+    100,
+    Math.round(words * 1.2)
+  );
+
+  return {
+    quality,
+    confidence,
+    reasoning,
+    communication,
+  };
 }
 
 function updateDifficulty(current: Difficulty, quality: 'shallow' | 'strong' | 'weak' | 'good'): Difficulty {
@@ -195,7 +248,23 @@ export function processTurn(
       timestamp: Date.now(),
     });
 
-    const quality = evaluateAnswer(candidateMessage, state.currentDifficulty);
+    const analysis = evaluateAnswer(
+  candidateMessage,
+  state.currentDifficulty
+);
+
+    const quality = analysis.quality;
+    newState.messages.push({
+  role: "interviewer",
+  content: `📊 Answer Analysis
+
+Confidence: ${analysis.confidence}%
+
+Reasoning: ${analysis.reasoning}%
+
+Communication: ${analysis.communication}%`,
+  timestamp: Date.now(),
+});
     const score = scoreTopic(state.currentDay ?? 0, quality, state.currentDifficulty);
     const day = state.currentDay ?? 0;
     const existing = newState.topicScores.find((t) => t.day === day);
@@ -236,7 +305,17 @@ export function processTurn(
 
     if (shouldFollowUp && (quality === 'shallow' || quality === 'weak')) {
       newState.followUpCount = state.followUpCount + 1;
-      const reply = generateFollowUp(newState, quality);
+      let reply = generateFollowUp(newState, quality);
+
+if (analysis.confidence > 90) {
+  reply +=
+    "\n\n⭐ Excellent explanation. I'll increase the difficulty for the next question.";
+}
+
+if (analysis.confidence < 40) {
+  reply +=
+    "\n\n💡 Take your time. Focus on explaining the basic concept before worrying about implementation.";
+}
       newState.messages.push({ role: 'interviewer', content: reply, timestamp: Date.now() });
       newState.questionsAsked = state.questionsAsked + 1;
       return { reply, done: false, state: newState };
@@ -268,7 +347,7 @@ export function processTurn(
     newState.askedDays = [...newState.askedDays, nextDay.day];
   }
 
-  const reply = generateQuestionForDay(nextDay, 'fundamental', newState.candidate);
+  const reply = generateQuestionForDay(nextDay, newState.currentDifficulty, newState.candidate);
   newState.messages.push({
     role: 'interviewer',
     content: reply,
@@ -288,7 +367,18 @@ export function startInterview(state: InterviewState): { reply: string; state: I
   const role = newState.candidate.member.jobRole;
   const exp = newState.candidate.member.yearsExperience;
 
-  const welcome = `Welcome, ${name}. I'm your AI interview agent today. I'll be conducting a technical interview based on your AI engineering curriculum.\n\nI see you're a ${role} with ${exp} years of experience. I'll ask you questions across several curriculum areas, and I want you to answer as thoroughly as you can. If something's unclear, just say so — this is a conversation, not an exam.\n\nLet's begin with our first topic.`;
+  const welcome = `Welcome ${name}!
+         I'm InterviewOS, your AI Technical Interviewer.
+         Today's interview is personalized based on your learning journey.
+         I'll evaluate:   
+           • Technical Understanding
+           • Communication
+           • Problem Solving
+           • AI Engineering Concepts
+           • System Design Thinking 
+         The interview adapts to your answers.
+         If you answer well, I'll increase the difficulty.
+         If you struggle, I'll guide you with follow-up questions.Let's begin.`;
 
   newState.messages.push({
     role: 'interviewer',
